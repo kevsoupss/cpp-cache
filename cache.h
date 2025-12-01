@@ -1,21 +1,28 @@
-#ifndef CACHE_CACHE_H
-#define CACHE_CACHE_H
+#ifndef CACHE_H_
+#define CACHE_H_
+
+#include <list>
 #include <string>
 #include <unordered_map>
 
-
 class Cache {
-private:
-    int capacity{};
-    std::unordered_map<std::string, std::string> internal_cache;
-
 public:
     Cache(int capacity);
-    void insert(const std::string& key, const std::string& value);
-    void erase(const std::string& key);
-    bool exists(const std::string& key);
-    std::unordered_map<std::string,std::string>::size_type size();
+
+    void Insert(const std::string& key, const std::string& value);
+    bool Exists(const std::string& key) const;
+    size_t Size() const;
+
+private:
+    void Erase(std::list<std::string>::iterator it);
+    void Evict();
+
+    size_t capacity_;
+    std::list<std::string> key_order_;
+    std::unordered_map<
+        std::string,
+        std::pair<std::string, std::list<std::string>::iterator>
+    > internal_cache_;
 };
 
-
-#endif //CACHE_CACHE_H
+#endif  // CACHE_H_

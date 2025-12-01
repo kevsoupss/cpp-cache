@@ -1,22 +1,43 @@
 #include "cache.h"
+#include <iterator>
 
-Cache::Cache(int capacity) {
-    this->capacity = capacity;
+Cache::Cache(int capacity) : capacity_(capacity) {}
+
+void Cache::Insert(const std::string& key, const std::string& value) {
+    if (!Exists(key)) {
+        if (Size() >= capacity_) {
+            Evict();
+        }
+        key_order_.push_front(key);
+        internal_cache_[key] = {value, key_order_.begin()};
+    } else {
+        // TODO: move key to front of key_order_
+        internal_cache_[key].first = value;
+    }
 }
 
-void Cache::insert(const std::string& key, const std::string& value) {
-    internal_cache[key] = value;
+bool Cache::Exists(const std::string& key) const {
+    // TODO: move key to front of key_order_
+    return internal_cache_.contains(key);
 }
 
-void Cache::erase(const std::string& key) {
-    internal_cache.erase(key);
+size_t Cache::Size() const {
+    return internal_cache_.size();
 }
 
-bool Cache::exists(const std::string& key) {
-    return internal_cache.contains(key);
+void Cache::Erase(std::list<std::string>::iterator it) {
+    const std::string& key = *it;
+
+    internal_cache_.erase(key);
+
+    key_order_.erase(it);
 }
 
-std::unordered_map<std::string,std::string>::size_type Cache::size() {
-    return internal_cache.size();
+void Cache::Evict() {
+    if (key_order_.empty()) return;
+
+    auto last_it = std::prev(key_order_.end());
+
+    Erase(last_it);
 }
 
