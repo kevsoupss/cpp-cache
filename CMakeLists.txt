@@ -5,4 +5,9 @@ set(CMAKE_CXX_STANDARD 20)
 
 add_executable(Cache main.cpp
         Cache.cpp
-        Cache.h)
+        Cache.h
+        resp.h
+        parser.cpp
+        parser.h
+        serializer.cpp
+        serializer.h)
