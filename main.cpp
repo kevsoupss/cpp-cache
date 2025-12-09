@@ -1,27 +1,74 @@
+#include "parser.h"
 #include <iostream>
-#include "cache.h"
+#include <variant>
+#include <optional>
+#include <vector>
+#include <string>
+#include <stdexcept>
+
+// Helper function to print RespValue recursively
+void printRespValue(const RespValue& val, int indent = 0) {
+    std::string pad(indent, ' ');
+    switch (val.respType) {
+        case RespType::SIMPLE_STRING:
+            std::cout << pad << "Simple string: "
+                      << std::get<std::string>(val.value) << "\n";
+            break;
+        case RespType::ERROR:
+            std::cout << pad << "Error: "
+                      << std::get<std::string>(val.value) << "\n";
+            break;
+        case RespType::INTEGER:
+            std::cout << pad << "Integer: "
+                      << std::get<long long>(val.value) << "\n";
+            break;
+        case RespType::BULK_STRING: {
+            auto opt = std::get<std::optional<std::string>>(val.value);
+            if (opt) std::cout << pad << "Bulk string: " << *opt << "\n";
+            else std::cout << pad << "Bulk string: null\n";
+            break;
+        }
+        case RespType::ARRAY: {
+            auto arrOpt = std::get<std::optional<std::vector<RespValue>>>(val.value);
+            if (!arrOpt) {
+                std::cout << pad << "Array: null\n";
+            } else {
+                std::cout << pad << "Array[" << arrOpt->size() << "]:\n";
+                for (const auto& elem : *arrOpt) {
+                    printRespValue(elem, indent + 2);
+                }
+            }
+            break;
+        }
+    }
+}
 
 int main() {
-    Cache cache(2);
+    std::vector<std::string> testInputs = {
+        "+OK\r\n",
+        "-ERROR message\r\n",
+        ":123\r\n",
+        "$5\r\nhello\r\n",
+        "$0\r\n\r\n",
+        "$-1\r\n",
+        "*2\r\n+foo\r\n:42\r\n",
+        "*3\r\n$3\r\nfoo\r\n$-1\r\n:7\r\n",
+        "*-1\r\n",
+        "*2\r\n*2\r\n:1\r\n:2\r\n*0\r\n"
+    };
 
-    std::cout << "Initial cache size: " << cache.Size() << "\n";
-
-    cache.Insert("testkey", "testval");
-    std::cout << "Inserted 'testkey'. Size: " << cache.Size() << "\n";
-
-    std::cout << std::boolalpha;
-    std::cout << "'testkey' exists: " << cache.Exists("testkey") << "\n";
-    std::cout << "'fakekey' exists: " << cache.Exists("fakekey") << "\n";
-
-    cache.Insert("anotherkey", "anotherval");
-    std::cout << "Inserted 'anotherkey'. Size: " << cache.Size() << "\n";
-
-    cache.Insert("thirdkey", "thirdval");
-    std::cout << "Inserted 'thirdkey'. Size: " << cache.Size() << "\n";
-
-    std::cout << "'testkey' exists after eviction: " << cache.Exists("testkey") << "\n";
-    std::cout << "'anotherkey' exists: " << cache.Exists("anotherkey") << "\n";
-    std::cout << "'thirdkey' exists: " << cache.Exists("thirdkey") << "\n";
+    for (const auto& input : testInputs) {
+        size_t pos = 0;
+        std::cout << "Parsing input: " << input << "\n";
+        try {
+            RespValue val = parseValue(input, pos);
+            printRespValue(val);
+            std::cout << "Finished parsing, final pos: " << pos << "\n";
+        } catch (const std::exception& e) {
+            std::cerr << "Parse error: " << e.what() << "\n";
+        }
+        std::cout << "-------------------------\n";
+    }
 
     return 0;
 }
