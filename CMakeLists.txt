@@ -12,7 +12,10 @@ add_executable(Cache main.cpp
         serializer.cpp
         serializer.h
         server.cpp
-        server.h)
+        server.h
+        handler.cpp
+        handler.h
+        resp.cpp)
 
 target_link_libraries(Cache ws2_32)
 

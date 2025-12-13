@@ -8,13 +8,6 @@
 Server::Server(unsigned short port, CommandHandler handler)
     : port_(port), handler_(std::move(handler)), listenSocket_(INVALID_SOCKET), running_(false) {}
 
-static RespValue makeProtocolError(const std::string& msg) {
-    RespValue err;
-    err.respType = RespType::ERR;
-    err.value = std::string("ERR " + msg);
-    return err;
-}
-
 bool Server::start() {
     WSADATA wsaData;
     int res = WSAStartup(MAKEWORD(2,2), &wsaData);
@@ -114,7 +107,7 @@ bool Server::start() {
                         break;
                     } else {
                         std::cerr << "Protocol error while parsing: " << what << "\n";
-                        RespValue err = makeProtocolError(what);
+                        RespValue err = RespValue::makeProtocolError(what);
                         std::string out = serialize(err);
                         send(clientSock, out.c_str(), (int)out.size(), 0);
 

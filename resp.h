@@ -26,10 +26,18 @@ struct RespValue {
     RespType respType;
     RespPayload value;
 
+    RespValue() = default;
     RespValue(RespType type, RespPayload val)
         : respType(type), value(std::move(val)) {}
 
-    RespValue() = default;
+
+    size_t getArraySize() const;
+    const RespValue& getArrayElement(size_t index) const;
+    std::string getString() const;
+
+    static RespValue makeProtocolError(const std::string& msg);
+    static RespValue makeSimpleString(const std::string& msg);
+
 };
 
 #endif //CACHE_RESP_H

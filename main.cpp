@@ -2,11 +2,10 @@
 #include "serializer.h"
 #include "parser.h"
 #include <iostream>
-
-RespValue simpleHandler(const RespValue& req);
+#include "handler.h"
 
 int main() {
-    Server server(6379, simpleHandler);
+    Server server(6379, Handler::handler);
 
     if (!server.start()) {
         std::cerr << "Failed to start RedisLite server\n";
