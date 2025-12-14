@@ -36,8 +36,8 @@ std::string serializeInteger(long long value) {
 
 std::string serializeBulkString(const std::optional<std::string>& value) {
     if (!value.has_value()) {
-        std::string nullResp = "$-1\r\n";
-        return nullResp;
+        static const std::string NULL_RESP = "$-1\r\n";
+        return NULL_RESP;
     }
     const std::string& content = *value;
     size_t length = content.size();
@@ -46,8 +46,8 @@ std::string serializeBulkString(const std::optional<std::string>& value) {
 
 std::string serializeArray(const std::optional<std::vector<RespValue>>& value) {
     if (!value.has_value()) {
-        std::string nullResp = "*-1\r\n";
-        return nullResp;
+        static const std::string NULL_RESP = "$*1\r\n";
+        return NULL_RESP;
     }
 
     const std::vector<RespValue>& content = *value;
