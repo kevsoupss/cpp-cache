@@ -1,5 +1,6 @@
 #include "serializer.h"
 
+#include <iostream>
 #include <stdexcept>
 
 std::string serialize(const RespValue& value) {

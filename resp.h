@@ -36,6 +36,7 @@ struct RespValue {
     std::string getString() const;
 
     static RespValue makeProtocolError(const std::string& msg);
+    static RespValue makeNullBulkString();
     static RespValue makeSimpleString(const std::string& msg);
 
 };
