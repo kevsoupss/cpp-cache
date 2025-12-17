@@ -6,18 +6,63 @@
 #pragma comment(lib, "Ws2_32.lib")
 
 Server::Server(unsigned short port, CommandHandler handler)
-    : port_(port), handler_(std::move(handler)), listenSocket_(INVALID_SOCKET), running_(false) {}
+    : port_(port), handler_(std::move(handler)), listenSocket_(INVALID_SOCKET), running_(false) {
+}
 
 bool Server::start() {
+    if (!initWinsock()) return false;
+    if (!bindAndListen()) return false;
 
+    pollFds_.push_back({listenSocket_, POLLRDNORM, 0});
+    running_ = true;
+
+    // Single thread
+    while (running_) {
+        // Blocks until client connection
+        int ret = WSAPoll(pollFds_.data(), pollFds_.size(), -1);
+        if (ret <= 0) continue;
+
+        for (size_t i = 0; i < pollFds_.size(); ++i) {
+            if (pollFds_[i].revents == 0) continue;
+
+            if (pollFds_[i].revents & (POLLERR | POLLHUP | POLLNVAL)) {
+                removeClient(i);
+                continue;
+            }
+
+            // New connection on listening socket or handle client data
+            if (pollFds_[i].fd == listenSocket_) {
+                acceptNewClient();
+            } else {
+                handleClientData(i);
+            }
+        }
+    }
+    cleanup();
+    return true;
+}
+
+void Server::stop() {
+    running_ = false;
+    if (listenSocket_ != INVALID_SOCKET) {
+        closesocket(listenSocket_);
+        listenSocket_ = INVALID_SOCKET;
+    }
+    WSACleanup();
+}
+
+bool Server::initWinsock() {
     // Initialize Winsock
     WSADATA wsaData;
-    int res = WSAStartup(MAKEWORD(2,2), &wsaData);
+    int res = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (res != 0) {
         std::cerr << "WSAStartup failed: " << res << "\n";
         return false;
     }
+    return true;
+}
 
+bool Server::bindAndListen() {
     // Create server socket
     listenSocket_ = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
     if (listenSocket_ == INVALID_SOCKET) {
@@ -28,7 +73,7 @@ bool Server::start() {
 
     // Socket options
     BOOL opt = TRUE;
-    setsockopt(listenSocket_, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char*)&opt, sizeof(opt));
+    setsockopt(listenSocket_, SOL_SOCKET, SO_EXCLUSIVEADDRUSE, (const char *) &opt, sizeof(opt));
 
     // Address structure
     sockaddr_in service{};
@@ -37,7 +82,7 @@ bool Server::start() {
     service.sin_port = htons(port_);
 
     // Bind socket to port and address
-    if (bind(listenSocket_, (sockaddr*)&service, sizeof(service)) == SOCKET_ERROR) {
+    if (bind(listenSocket_, (sockaddr *) &service, sizeof(service)) == SOCKET_ERROR) {
         std::cerr << "bind() failed: " << WSAGetLastError() << "\n";
         closesocket(listenSocket_);
         WSACleanup();
@@ -53,42 +98,48 @@ bool Server::start() {
     }
 
     std::cout << "RedisLite listening on port " << port_ << "...\n";
-    running_ = true;
+    return true;
+}
 
-    // Single thread
-    while (running_) {
-        // Blocks until client connection
-        SOCKET clientSock = accept(listenSocket_, nullptr, nullptr);
-        if (clientSock == INVALID_SOCKET) {
-            std::cerr << "accept() failed: " << WSAGetLastError() << "\n";
-            continue;
-        }
-        std::cout << "Client connected.\n";
+void Server::removeClient(size_t &idx) {
+    SOCKET removedSocket = pollFds_[idx].fd;
+    closesocket(removedSocket);
+    pollFds_.erase(pollFds_.begin() + idx);
+    clientSessions_.erase(removedSocket);
+    --idx;
+    //std::cout << "Client disconnected (Error/HUP).\n";
+}
 
-        // Accumulation buffer
-        std::string readBuffer;
-        const int BUFFER_SZ = 4096;
-        std::vector<char> tmp(BUFFER_SZ);
+void Server::acceptNewClient() {
+    SOCKET clientSocket = accept(listenSocket_, nullptr, nullptr);
+    if (clientSocket != INVALID_SOCKET) {
+        WSAPOLLFD clientFd = {};
+        clientFd.fd = clientSocket;
+        clientFd.events = POLLRDNORM;
+        pollFds_.push_back(clientFd);
+        clientSessions_[clientSocket] = {clientSocket, ""};
+        //std::cout << "New client connected.\n";
+    }
+}
 
-        // TCP receive loop
-        while (true) {
-            int bytes = recv(clientSock, tmp.data(), BUFFER_SZ, 0);
-            if (bytes == 0) {
-                std::cout << "Client closed connection.\n";
-                closesocket(clientSock);
-                break;
-            } else if (bytes < 0) {
-                std::cerr << "recv() error: " << WSAGetLastError() << "\n";
-                closesocket(clientSock);
-                break;
-            }
+void Server::handleClientData(size_t& i) {
+    ClientSession& session = clientSessions_[pollFds_[i].fd];
+    SOCKET& clientSocket = session.socket;
+    std::string& readBuffer = session.buffer;
 
+    if (pollFds_[i].revents & POLLRDNORM) {
+        int BUFFER_SZ = 4096;
+        static std::vector<char> tmp(BUFFER_SZ);
+
+        int bytes = recv(clientSocket, tmp.data(), BUFFER_SZ, 0);
+
+        if (bytes <= 0) {
+           removeClient(i);
+        } else {
             readBuffer.append(tmp.data(), bytes);
-
             size_t pos = 0;
-
-            // Parse RESP values
             while (pos < readBuffer.size()) {
+                size_t lastPos = pos;
                 try {
                     RespValue req = parseValue(readBuffer, pos);
 
@@ -97,54 +148,36 @@ bool Server::start() {
 
                     // Serialize and send back
                     std::string out = serialize(reply);
-                    int sent = send(clientSock, out.c_str(), (int)out.size(), 0);
+                    int sent = send(clientSocket, out.c_str(), (int) out.size(), 0);
                     if (sent == SOCKET_ERROR) {
                         std::cerr << "send() failed: " << WSAGetLastError() << "\n";
                         break;
                     }
-                } catch (const std::runtime_error& e) {
-                    std::string what = e.what();
-
-                    bool likelyIncomplete = false;
-                    if (what.find("No CRLF") != std::string::npos ||
-                        what.find("Bulk string too short") != std::string::npos ||
-                        what.find("Missing CRLF") != std::string::npos) {
-                        likelyIncomplete = true;
-                    }
-
-                    if (likelyIncomplete) {
-                        break;
-                    } else {
-                        std::cerr << "Protocol error while parsing: " << what << "\n";
-                        RespValue err = RespValue::makeProtocolError(what);
-                        std::string out = serialize(err);
-                        send(clientSock, out.c_str(), (int)out.size(), 0);
-
-                        readBuffer.clear();
-                        pos = 0;
-                        break;
-                    }
+                } catch (const IncompleteMessageException) {
+                    pos = lastPos;
+                    break;
+                } catch (const std::runtime_error &e) {
+                    handleProtocolError(clientSocket, e.what());
+                    removeClient(i);
+                    return;
                 }
             }
-
             if (pos > 0) {
                 readBuffer.erase(0, pos);
             }
-
         }
     }
-
-    // Cleanup
-    closesocket(listenSocket_);
-    WSACleanup();
-    return true;
 }
 
-void Server::stop() {
-    running_ = false;
-    if (listenSocket_ != INVALID_SOCKET) {
-        closesocket(listenSocket_);
-        listenSocket_ = INVALID_SOCKET;
-    }
+void Server::handleProtocolError(SOCKET s, const std::string& errorMessage) {
+    std::cerr << "Protocol Error on socket " << s << ": " << errorMessage << "\n";
+
+    std::string respError = "-ERR Protocol Error: " + errorMessage + "\r\n";
+
+    send(s, respError.c_str(), static_cast<int>(respError.size()), 0);
+}
+
+void Server::cleanup() {
+    closesocket(listenSocket_);
     WSACleanup();
 }

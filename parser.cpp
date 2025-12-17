@@ -36,7 +36,7 @@ static std::string readLine(const std::string& input, size_t& pos) {
         }
         pos++;
     }
-    throw std::runtime_error("No CRLF found.");
+    throw IncompleteMessageException();
 }
 
 RespValue parseValue(const std::string& input, size_t& pos) {
@@ -108,14 +108,15 @@ RespValue parseBulkString(const std::string& input, size_t& pos) {
     }
 
     if (pos + length + 2 > input.size()) {
-        throw std::runtime_error("Bulk string too short at position " + std::to_string(pos));
+        // Bulk string too short
+        throw IncompleteMessageException();
     }
 
     std::string content = input.substr(pos, length);
     pos += length;
 
     if (input[pos] != '\r' || input[pos + 1] != '\n') {
-        throw std::runtime_error("Missing CRLF after bulk string content at position " + std::to_string(pos));
+        throw std::runtime_error("Bulk string trailing CRLF missing");
     }
     pos += 2;
 

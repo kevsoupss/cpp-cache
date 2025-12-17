@@ -18,11 +18,25 @@ public:
     void stop();
 
 private:
+    struct ClientSession {
+        SOCKET socket;
+        std::string buffer;
+    };
+
     unsigned short port_;
     CommandHandler handler_;
-
     SOCKET listenSocket_;
     bool running_;
+    std::vector<WSAPOLLFD> pollFds_;
+    std::unordered_map<SOCKET, ClientSession> clientSessions_;
+
+    bool initWinsock();
+    bool bindAndListen();
+    void removeClient(size_t&);
+    void acceptNewClient();
+    void handleClientData(size_t&);
+    void handleProtocolError(SOCKET, const std::string&);
+    void cleanup();
 };
 
 

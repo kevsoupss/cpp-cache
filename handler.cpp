@@ -72,7 +72,6 @@ RespValue Handler::handleGet(const std::vector<RespValue> &array) {
     }
     const std::string& key = array[1].getString();
 
-    std::cout << "Get handled";
     auto it = dataStore_.find(array[1].getString());
 
     if (it != dataStore_.end()) {

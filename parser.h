@@ -4,6 +4,11 @@
 
 #include "resp.h"
 
+class IncompleteMessageException : public std::runtime_error {
+public:
+    IncompleteMessageException() : std::runtime_error("Incomplete RESP message") {}
+};
+
 RespValue parseValue(const std::string&, size_t&);
 
 RespValue parseSimpleString(const std::string&, size_t&);
