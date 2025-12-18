@@ -1,10 +1,7 @@
-//
-// Created by kevin on 12/11/2025.
-//
-
 #include "handler.h"
 #include "resp.h"
 #include <algorithm>
+#include <chrono>
 #include <iostream>
 
 // Command Mapper
@@ -13,7 +10,12 @@ std::unordered_map<std::string, Handler::CommandFunction> Handler::commandMap_ =
     {"SET", &Handler::handleSet},
 };
 
-std::unordered_map<std::string, RespValue> Handler::dataStore_ {};
+std::unordered_map<std::string, Handler::DataEntry> Handler::dataStore_ {};
+
+uint64_t getNowMS() {
+    using namespace std::chrono;
+    return duration_cast<milliseconds>(system_clock::now().time_since_epoch()).count();
+}
 
 RespValue Handler::handler(const RespValue &req) {
     if (req.respType != RespType::ARRAY) {
@@ -72,21 +74,40 @@ RespValue Handler::handleGet(const std::vector<RespValue> &array) {
     }
     const std::string& key = array[1].getString();
 
-    auto it = dataStore_.find(array[1].getString());
-
-    if (it != dataStore_.end()) {
-        return it->second;
-    } else {
+    auto it = dataStore_.find(key);
+    if (it == dataStore_.end()) {
         return RespValue::makeNullBulkString();
     }
+
+    if (it->second.expireAt != -1 && getNowMS() > it ->second.expireAt) {
+        return RespValue::makeNullBulkString();
+    }
+
+    return it->second.value;
 }
 
 RespValue Handler::handleSet(const std::vector<RespValue> &array) {
-    if (array.size() < 3) {
+    size_t arraySize = array.size();
+    if (arraySize < 3) {
         return RespValue::makeProtocolError("Wrong number of arguments for 'SET' command");
     }
     const std::string& key = array[1].getString();
     const RespValue& value = array[2];
-    dataStore_[key] = value;
+    uint64_t expireAt = -1;
+
+    if (array.size() >= 5) {
+        std::string option = array[3].getString();
+        std::transform(option.begin(), option.end(), option.begin(), ::toupper);
+
+        if (option == "PX") {
+            uint64_t ttl = std::stoll(array[4].getString());
+            expireAt = getNowMS() + ttl;
+        } else if (option == "EX") {
+            uint64_t ttl = std::stoll(array[4].getString());
+            expireAt = getNowMS() + (ttl * 1000);
+        }
+    }
+
+    dataStore_[key] = {value, expireAt};
     return RespValue::makeSimpleString("OK");
 }

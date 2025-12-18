@@ -23,12 +23,12 @@ private:
         std::string buffer;
     };
 
-    unsigned short port_;
+    std::unordered_map<SOCKET, ClientSession> clientSessions_;
+    std::vector<WSAPOLLFD> pollFds_;
     CommandHandler handler_;
     SOCKET listenSocket_;
+    unsigned short port_;
     bool running_;
-    std::vector<WSAPOLLFD> pollFds_;
-    std::unordered_map<SOCKET, ClientSession> clientSessions_;
 
     bool initWinsock();
     bool bindAndListen();
